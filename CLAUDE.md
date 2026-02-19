@@ -206,6 +206,82 @@ To switch challenges, update the `challenge-env` build context in `docker-compos
 
 ---
 
+## CI/CD and GitHub Workflows
+
+The project uses GitHub Actions to automate container image builds and publish them to the GitHub Container Registry (ghcr.io). Workflow definitions live in `.github/workflows/`.
+
+### Workflow Structure
+
+```
+.github/
+└── workflows/
+    ├── build-challenge-base.yml     ← builds challenge base images (implemented)
+    └── build-exploit-env.yml        ← builds MCP server image (to be implemented)
+```
+
+### Challenge Base Workflow (`build-challenge-base.yml`)
+
+Builds and publishes three Ubuntu base images used by all CTF challenge containers.
+
+**Triggers:**
+- Push to `main` branch when `challenge-base/**` or the workflow file itself changes
+- Git tags matching `v*.*.*` (for versioned releases)
+- Manual trigger via `workflow_dispatch` (GitHub UI "Run workflow" button)
+
+**Matrix Build:**
+- Ubuntu versions: `20.04`, `22.04`, `24.04`
+- Each version builds in parallel as a separate job
+
+**Tagging Strategy:**
+- `latest` tag: `ghcr.io/<repo>/challenge-base:<version>-latest`
+  - Updated on every push to main
+- Versioned tags: `ghcr.io/<repo>/challenge-base:<version>-<release>`
+  - Created only when pushing version tags (e.g., `v1.0.0`)
+
+**Registry:**
+- Images push to `ghcr.io`
+- Uses `GITHUB_TOKEN` for authentication (automatic for repo workflows)
+- Requires `packages: write` permission
+
+**Repository Name Handling:**
+Docker tags require lowercase repository names. The workflow converts `github.repository` to lowercase using `tr '[:upper:]' '[:lower:]'` before constructing image tags.
+
+**Build Optimization:**
+- Uses GitHub Actions cache (`cache-from`/`cache-to: type=gha`)
+- Multi-platform support: `linux/amd64` (extendable to `linux/arm64`)
+
+### Exploit-env Workflow (Future)
+
+The `build-exploit-env.yml` workflow will follow the same pattern as `build-challenge-base.yml`:
+
+- Triggers on changes to `exploit-env/**` or workflow file
+- Builds the MCP server container image
+- Tags as `ghcr.io/<repo>/exploit-env:latest` (and versioned on release)
+- Can include `pyproject.toml` hash in labels for cache-busting dependencies
+
+### Path Filtering
+
+Both workflows use `paths` filters to avoid unnecessary builds:
+```yaml
+paths:
+  - 'challenge-base/**'
+  - '.github/workflows/build-challenge-base.yml'
+```
+Only pushes that modify these paths trigger the workflow.
+
+### Manual Workflow Invocation
+
+To trigger a build without pushing code:
+
+1. Go to the GitHub repository → Actions tab
+2. Select "Build Challenge Base Images" workflow
+3. Click "Run workflow"
+4. Select branch and click "Run workflow"
+
+This is useful for rebuilding images after upstream base image updates or for testing workflow changes.
+
+---
+
 ## How to Use This Documentation
 
 **You build this project by following the steps in order.** Each step has its own document in `steps/`. Before starting any step:
