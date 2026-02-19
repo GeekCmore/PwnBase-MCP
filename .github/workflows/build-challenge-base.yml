@@ -10,8 +10,6 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  # Convert to lowercase for Docker tag compatibility
-  REPO_OWNER: ${{ tolower(github.repository) }}
 
 jobs:
   build:
@@ -41,11 +39,13 @@ jobs:
       - name: Extract metadata and tags
         id: meta
         run: |
-          TAGS="${{ env.REGISTRY }}/${{ env.REPO_OWNER }}/challenge-base:${{ matrix.ubuntu_version }}-latest"
+          # Convert repository name to lowercase for Docker tag compatibility
+          REPO_NAME=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          TAGS="${{ env.REGISTRY }}/${REPO_NAME}/challenge-base:${{ matrix.ubuntu_version }}-latest"
 
           if [[ ${{ github.ref_type }} == "tag" ]]; then
             VERSION=${GITHUB_REF#refs/tags/v}
-            TAGS="$TAGS,${{ env.REGISTRY }}/${{ env.REPO_OWNER }}/challenge-base:${{ matrix.ubuntu_version }}-$VERSION"
+            TAGS="$TAGS,${{ env.REGISTRY }}/${REPO_NAME}/challenge-base:${{ matrix.ubuntu_version }}-$VERSION"
             echo "version=$VERSION" >> $GITHUB_OUTPUT
           fi
 
