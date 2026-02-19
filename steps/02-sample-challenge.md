@@ -10,6 +10,8 @@
 
 A minimal stack buffer overflow challenge used as the canonical test target throughout all integration tests. It must be exploitable with a simple ret2win pattern (no ASLR, no stack canary, no PIE).
 
+**Note:** The challenge binary is compiled inside the Docker image during build, not on your local machine. This ensures reproducible builds and keeps compiled binaries out of git.
+
 ---
 
 ## Files to Create
@@ -47,6 +49,11 @@ int main() {
     vuln();
     return 0;
 }
+
+// COMPILER_FLAGS: -m64 -fno-stack-protector -no-pie -z execstack -w
+// Exploit details (Ubuntu 22.04):
+//   win() address: varies by build - extract from ELF
+//   Buffer offset: 72 bytes (64 buf + 8 saved RBP)
 ```
 
 ### `challenges/example-bof/flag`
@@ -55,45 +62,22 @@ int main() {
 CTF{example_bof_flag_for_testing}
 ```
 
-### `challenges/example-bof/Makefile`
-
-```makefile
-CC = gcc
-CFLAGS = -m64 -fno-stack-protector -no-pie -z execstack -w
-
-all: pwn_binary
-
-pwn_binary: vuln.c
-	$(CC) $(CFLAGS) -o pwn_binary vuln.c
-
-clean:
-	rm -f pwn_binary
-```
-
-### Compile the binary
-
-```bash
-cd challenges/example-bof
-make
-```
-
-Verify the binary has the required properties:
-```bash
-checksec --file=pwn_binary
-# Should show: No RELRO / No canary / NX disabled / No PIE
-```
-
-If `checksec` is not installed: `pip install checksec-py` or use `readelf -l pwn_binary`.
-
 ### `challenges/example-bof/Dockerfile`
 
 ```dockerfile
-FROM challenge-base:22.04
+# Build argument allows overriding base image for testing
+ARG BASE_IMAGE=challenge-base:22.04
+FROM ${BASE_IMAGE}
 
-COPY pwn_binary  /challenge/pwn_binary
-COPY flag        /challenge/flag
+# Copy source code
+COPY vuln.c /tmp/vuln.c
 
-RUN chmod +x /challenge/pwn_binary
+# Compile with deterministic flags
+RUN gcc -m64 -fno-stack-protector -no-pie -z execstack -w \
+    -o /challenge/pwn_binary /tmp/vuln.c
+
+# Copy flag file
+COPY flag /challenge/flag
 
 ENV CHALLENGE_PORT=4444
 ENV CHALLENGE_BINARY=/challenge/pwn_binary
@@ -137,15 +121,23 @@ conn.close()
 "
 ```
 
-### 5. Verify the binary is exploitable (find win() address and exploit)
+### 5. Extract binary from container and verify it's exploitable
+
+First, copy the binary out of the running container:
+```bash
+docker cp test-challenge:/challenge/pwn_binary /tmp/pwn_binary
+```
+
+Now analyze and exploit it:
 ```python
 # Run this Python snippet manually
 from pwn import *
 
 context.arch = 'amd64'
-context.log_level = 'error'
+context.log_level = 'info'
 
-binary = ELF('challenges/example-bof/pwn_binary')
+# Extract win() address from the binary
+binary = ELF('/tmp/pwn_binary')
 win_addr = binary.symbols['win']
 print(f"win() at: {hex(win_addr)}")
 
@@ -195,17 +187,37 @@ curl -s http://localhost:5000/verify
 docker stop test-challenge
 ```
 
-All checks must pass. Note the exact `win()` address and exploit offset for use in Step 14.
+All checks must pass. The win() address will vary between builds but the exploit offset (72 bytes) is deterministic.
 
 ---
 
-## Record These Values
+## Why In-Container Compilation?
 
-After verification, record the following for use in the integration test (Step 14):
+Compiling the challenge binary inside Docker during image build (rather than locally and committing the binary) has several advantages:
 
+1. **No binary in git** — Compiled binaries shouldn't be in version control. The source (`vuln.c`) is tracked, but the compiled artifact is built fresh each time.
+
+2. **Reproducible builds** — Anyone who builds the Docker image gets the same binary, compiled with the same gcc version and flags specified in the Dockerfile.
+
+3. **No local toolchain required** — Developers don't need gcc or other compilation tools installed locally. Docker provides the build environment.
+
+4. **CI/CD testing** — The GitHub workflow can build challenge images from scratch and test them, ensuring the challenge-base images always work correctly.
+
+5. **Multi-distro testing** — By changing the `BASE_IMAGE` build argument, you can test the same challenge source against different Ubuntu versions (20.04, 22.04, 24.04) to catch compatibility issues early.
+
+---
+
+## Dynamic Address Extraction
+
+Since the binary is compiled during Docker build, the `win()` address may vary between builds. The exploit workflow should extract addresses dynamically from the ELF:
+
+```python
+# Extract win() address from the container
+import subprocess
+subprocess.run(['docker', 'cp', 'test-challenge:/challenge/pwn_binary', '/tmp/pwn_binary'],
+               check=True)
+binary = ELF('/tmp/pwn_binary')
+win_addr = binary.symbols['win']
 ```
-win() address:  0x__________
-exploit offset: __________  (bytes of padding before return address)
-```
 
-Add these as comments in `challenges/example-bof/vuln.c`.
+The integration tests in Step 14 use this pattern to ensure exploits work regardless of the exact addresses in the compiled binary.

@@ -22,3 +22,8 @@ venv/
 # Docker
 *.tar
 *.tar.gz
+
+# Compiled challenge binaries
+*.pwn
+pwn_binary
+**/pwn_binary

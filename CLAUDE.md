@@ -67,10 +67,12 @@ pwn-agent-env/
 │       └── ghidra_proxy.py
 ├── challenges/
 │   └── example-bof/
-│       ├── Dockerfile
-│       ├── vuln.c
-│       ├── pwn_binary          ← compiled from vuln.c
-│       └── flag
+│       ├── Dockerfile          ← compiles vuln.c during build
+│       ├── vuln.c              ← source code (no pre-compiled binary)
+│       └── flag                ← challenge flag
+
+NOTE: Challenge binaries are never committed to git. Each challenge's Dockerfile
+compiles the source during image build using gcc from the challenge-base image.
 └── tests/
     ├── unit/
     │   ├── test_proc_utils.py
@@ -130,7 +132,8 @@ pwn-agent-env/
 ### Challenge Environment
 - **Service manager**: `xinetd` — forks one child per TCP connection
 - **Flag verifier**: minimal Flask HTTP server
-- **Challenge binary**: compiled C, served via xinetd
+- **Challenge binary**: compiled C (compiled via Dockerfile using gcc from base image)
+- **No pre-compiled binaries in git** - all compilation happens during image build
 
 ---
 
@@ -266,8 +269,23 @@ Both workflows use `paths` filters to avoid unnecessary builds:
 paths:
   - 'challenge-base/**'
   - '.github/workflows/build-challenge-base.yml'
+  - 'challenges/example-bof/**'
 ```
 Only pushes that modify these paths trigger the workflow.
+
+### Challenge Testing (test job)
+
+The `build-challenge-base.yml` workflow includes a `test` job that:
+
+1. Runs after the `build` job completes (uses `needs` dependency)
+2. Tests each Ubuntu version (20.04, 22.04, 24.04) in parallel
+3. Pulls the newly-built challenge-base image
+4. Builds the example-bof challenge using that base
+5. Runs the challenge container
+6. Executes a pwntools exploit to verify the binary is exploitable
+7. Tests the flag verifier REST endpoint
+
+This ensures any change to challenge-base doesn't break challenge compatibility.
 
 ### Manual Workflow Invocation
 

@@ -49,10 +49,27 @@ MCP_URL = "http://localhost:8080/mcp"
 CHALLENGE_HOST = "challenge"
 CHALLENGE_PORT = 4444
 
-# win() address and offset discovered in Step 02
-# Update these values with the actual values from your build:
-WIN_ADDR = 0x401234    # <-- replace with actual address from Step 02
-EXPLOIT_OFFSET = 72    # <-- replace with actual offset from Step 02
+# win() address is extracted dynamically from the container
+# Offset is fixed for this vulnerability
+EXPLOIT_OFFSET = 72
+
+def get_win_addr():
+    """Extract win() address from the challenge container."""
+    import subprocess
+    # Build a temporary container to extract the binary
+    subprocess.run(['docker', 'build', '-t', 'temp-bof', 'challenges/example-bof/'],
+                   check=True, capture_output=True)
+    subprocess.run(['docker', 'create', '--name', 'temp-extract', 'temp-bof'],
+                   check=True, capture_output=True)
+    subprocess.run(['docker', 'cp', 'temp-extract:/challenge/pwn_binary', '/tmp/pwn_binary'],
+                   check=True, capture_output=True)
+    subprocess.run(['docker', 'rm', 'temp-extract'], check=True, capture_output=True)
+    subprocess.run(['docker', 'rmi', 'temp-bof'], check=True, capture_output=True)
+
+    binary = ELF('/tmp/pwn_binary')
+    return binary.symbols['win']
+
+WIN_ADDR = get_win_addr()
 
 async def call_tool(tool_name: str, args: dict) -> dict:
     async with streamable_http_client(MCP_URL) as (read, write, _):
