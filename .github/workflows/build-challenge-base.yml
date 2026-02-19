@@ -6,6 +6,9 @@ on:
       - main
     tags:
       - 'v*.*.*'
+    paths:
+      - 'challenge-base/**'
+      - '.github/workflows/build-challenge-base.yml'
   workflow_dispatch:
 
 env:
