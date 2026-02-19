@@ -18,3 +18,7 @@ venv/
 
 # GDB
 .gdb_history
+
+# Docker
+*.tar
+*.tar.gz
