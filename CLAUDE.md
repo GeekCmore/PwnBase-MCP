@@ -8,6 +8,21 @@ This document is the entry point for building the Pwn Agent Environment from scr
 
 A three-container CTF exploit development platform designed for AI Agents. It provides a structured, reproducible workspace for reverse engineering, exploit writing, and interactive debugging of binary CTF challenges. The Agent interacts exclusively through a single MCP HTTP server.
 
+---
+
+## Critical Constraints
+
+**NEVER run Docker-related commands locally.** This project runs in WSL2 and the Docker daemon is managed separately. All `docker` and `docker compose` commands must be executed by the user in their terminal, not through Claude Code. This includes:
+- `docker build`
+- `docker compose build`
+- `docker compose up`
+- `docker compose down`
+- `docker ps`
+- `docker logs`
+- Any other Docker CLI commands
+
+When Docker-related operations are needed (e.g., in deployment examples or testing instructions), present them as documentation for the user to execute manually. Do not use the Bash tool to run Docker commands.
+
 There are three containers:
 
 - **challenge-env** — runs the CTF challenge binary under xinetd, exposes a TCP port for pwntools connections, and provides a flag verification REST endpoint. The Agent never calls this directly.
