@@ -1,0 +1,12 @@
+service challenge
+{
+    type        = UNLISTED
+    protocol    = tcp
+    socket_type = stream
+    port        = ${CHALLENGE_PORT}
+    wait        = no
+    user        = nobody
+    server      = ${CHALLENGE_BINARY}
+    log_on_failure += USERID
+    disable     = no
+}
