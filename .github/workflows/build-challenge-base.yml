@@ -187,15 +187,39 @@ jobs:
 
       - name: Test flag verifier endpoint
         run: |
-          curl -s -X POST http://localhost:5000/verify \
-            -H "Content-Type: application/json" \
-            -d '{"flag": "CTF{example_bof_flag_for_testing}"}' | \
-            grep -q '"correct": true' && echo "Correct flag test: PASS"
+          # Wait for Flask server to be ready on port 5000
+          for i in {1..10}; do
+            if timeout 1 bash -c "cat < /dev/null > /dev/tcp/localhost/5000" 2>/dev/null; then
+              echo "Flag verifier is ready on port 5000"
+              break
+            fi
+            echo "Waiting for flag verifier... ($i/10)"
+            sleep 1
+          done
 
-          curl -s -X POST http://localhost:5000/verify \
+          # Test correct flag
+          response=$(curl -s -X POST http://localhost:5000/verify \
             -H "Content-Type: application/json" \
-            -d '{"flag": "wrong"}' | \
-            grep -q '"correct": false' && echo "Wrong flag test: PASS"
+            -d '{"flag": "CTF{example_bof_flag_for_testing}"}')
+          echo "Correct flag response: $response"
+          if echo "$response" | grep -q '"correct": true'; then
+            echo "Correct flag test: PASS"
+          else
+            echo "Correct flag test: FAIL"
+            exit 1
+          fi
+
+          # Test wrong flag
+          response=$(curl -s -X POST http://localhost:5000/verify \
+            -H "Content-Type: application/json" \
+            -d '{"flag": "wrong"}')
+          echo "Wrong flag response: $response"
+          if echo "$response" | grep -q '"correct": false'; then
+            echo "Wrong flag test: PASS"
+          else
+            echo "Wrong flag test: FAIL"
+            exit 1
+          fi
 
       - name: Stop challenge container
         if: always()
